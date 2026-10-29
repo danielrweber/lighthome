@@ -1,7 +1,12 @@
 package com.danielrweber.lighthome
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.net.URI
 import java.net.URISyntaxException
+import java.util.Base64
 
 internal data class HaEndpoint(
     val baseUrl: String,
@@ -69,6 +74,70 @@ internal fun parseHaBaseUrl(raw: String): HaUrlResult {
     val baseUrl = if (port == -1 || port == 443) "https://$host" else "https://$host:$port"
     val label = if (port == -1 || port == 443) host else "$host:$port"
     return HaUrlResult.Ok(HaEndpoint(baseUrl = baseUrl, label = label))
+}
+
+private val JWT_CANDIDATE = Regex("""[A-Za-z0-9_-]+=*(?:\.[A-Za-z0-9_-]+=*){2}""")
+private val jwtJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * Home Assistant draws the long-lived token QR with `qrcode.toCanvas(token)`.
+ * The token is the string from `auth/long_lived_access_token`: an HS256 JWT
+ * whose payload is `iss` (refresh-token id), `iat`, and `exp`.
+ * A scan of that code is the JWT itself. If a wrapper includes the same JWT,
+ * keep only the JWT.
+ */
+internal fun tokenFromScan(raw: String): TokenResult {
+    val trimmed = raw.trim().removePrefix("\uFEFF")
+    val jwt = homeAssistantAccessToken(trimmed)
+    if (jwt != null) return normalizeToken(jwt)
+    if ("://" in trimmed) return TokenResult.Invalid(HaMessages.SCAN_NOT_TOKEN)
+    return normalizeToken(trimmed)
+}
+
+internal fun homeAssistantAccessToken(raw: String): String? {
+    val matches = JWT_CANDIDATE.findAll(raw).map { it.value }.distinct()
+    return matches.singleOrNull { isHomeAssistantAccessToken(it) }
+}
+
+private fun isHomeAssistantAccessToken(token: String): Boolean {
+    val parts = token.split('.')
+    if (parts.size != 3 || parts.any { it.isEmpty() }) return false
+    val header = jsonObject(decodeBase64Url(parts[0])) ?: return false
+    val payload = jsonObject(decodeBase64Url(parts[1])) ?: return false
+    if (header.stringClaim("alg") != "HS256") return false
+    val issuer = payload.stringClaim("iss")
+    val issuedAt = payload.longClaim("iat")
+    val expiresAt = payload.longClaim("exp")
+    return !issuer.isNullOrEmpty() && issuedAt != null && expiresAt != null
+}
+
+private fun jsonObject(text: String?): JsonObject? {
+    if (text.isNullOrEmpty()) return null
+    return try {
+        jwtJson.parseToJsonElement(text) as? JsonObject
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun JsonObject.stringClaim(name: String): String? {
+    val value = this[name] as? JsonPrimitive ?: return null
+    return if (value.isString) value.content else null
+}
+
+private fun JsonObject.longClaim(name: String): Long? {
+    val value = this[name] as? JsonPrimitive ?: return null
+    return value.longOrNull
+}
+
+private fun decodeBase64Url(segment: String): String? {
+    val body = segment.trimEnd('=')
+    val padded = body + "=".repeat((4 - body.length % 4) % 4)
+    return try {
+        String(Base64.getUrlDecoder().decode(padded), Charsets.UTF_8)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }
 
 internal fun normalizeToken(raw: String): TokenResult {

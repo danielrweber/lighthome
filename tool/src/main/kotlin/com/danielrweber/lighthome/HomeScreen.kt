@@ -9,14 +9,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextAlign
 import com.thelightphone.sdk.InitialScreen
+import com.thelightphone.sdk.LightQrCodeScanner
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.rememberKeyboardOptions
@@ -66,8 +71,13 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeVi
                         onBack = viewModel::leaveSetup,
                         onEditAddress = viewModel::openAddressEditor,
                         onEditToken = viewModel::openTokenEditor,
+                        onScanToken = viewModel::openTokenScanner,
                         onForget = viewModel::askForget,
                         onConnect = viewModel::connect,
+                    )
+                    HomeMode.ScanToken -> TokenScanner(
+                        onScanned = viewModel::submitScannedToken,
+                        onBack = viewModel::cancelEditor,
                     )
                     HomeMode.EditAddress, HomeMode.EditToken -> {
                         key(state.editorSession) {
@@ -102,6 +112,19 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeVi
                         onSetup = viewModel::openSetup,
                         onRefresh = viewModel::refresh,
                         onActivate = viewModel::activate,
+                        onChoose = viewModel::openChoose,
+                        onFilter = viewModel::openFilter,
+                    )
+                    HomeMode.Choose -> ChooseContent(
+                        state = state,
+                        onBack = viewModel::showDevices,
+                        onRefresh = viewModel::refresh,
+                        onToggle = viewModel::toggleChosen,
+                    )
+                    HomeMode.Filter -> FilterContent(
+                        state = state,
+                        onBack = viewModel::showDevices,
+                        onSelect = viewModel::setFilter,
                     )
                     HomeMode.Detail -> DetailContent(
                         state = state,
@@ -136,6 +159,7 @@ private fun SetupContent(
     onBack: () -> Unit,
     onEditAddress: () -> Unit,
     onEditToken: () -> Unit,
+    onScanToken: () -> Unit,
     onForget: () -> Unit,
     onConnect: () -> Unit,
 ) {
@@ -190,6 +214,13 @@ private fun SetupContent(
                 placeholder = HaMessages.TOKEN_PLACEHOLDER,
                 onClick = onEditToken,
             )
+            LightText(
+                text = HaMessages.SCAN_TOKEN,
+                variant = LightTextVariant.Copy,
+                modifier = Modifier
+                    .padding(top = 1f.gridUnitsAsDp(), bottom = 0.5f.gridUnitsAsDp())
+                    .lightClickable(onClick = onScanToken),
+            )
             if (state.tokenStatus != TokenStatus.Missing || state.setupAddress.isNotBlank()) {
                 LightText(
                     text = HaMessages.FORGET,
@@ -209,13 +240,37 @@ private fun SetupContent(
 }
 
 @Composable
+private fun TokenScanner(
+    onScanned: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var pendingScan by remember { mutableStateOf<String?>(null) }
+    LightQrCodeScanner(
+        title = HaMessages.TOKEN_LABEL,
+        onScanned = { pendingScan = it },
+        onBack = onBack,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightThemeTokens.colors.background),
+    )
+    LaunchedEffect(pendingScan) {
+        val value = pendingScan ?: return@LaunchedEffect
+        onScanned(value)
+    }
+}
+
+@Composable
 private fun DeviceListContent(
     state: HomeUiState,
     onSetup: () -> Unit,
     onRefresh: () -> Unit,
     onActivate: (String) -> Unit,
+    onChoose: () -> Unit,
+    onFilter: () -> Unit,
 ) {
-    val grouped = sections(state.devices)
+    val visible = visibleDevices(state.devices, state.chosenIds, state.category)
+    val grouped = sections(visible)
+    val anyChosen = state.devices.any { it.entityId in state.chosenIds }
     Frame {
         LightTopBar(
             leftButton = LightBarButton.LightIcon(
@@ -223,7 +278,7 @@ private fun DeviceListContent(
                 onClick = onSetup,
                 contentDescription = "Setup",
             ),
-            center = LightTopBarCenter.Text(state.label),
+            center = LightTopBarCenter.Text(listStatusText(state.busy, state.listStatus)),
             rightButton = LightBarButton.LightIcon(
                 icon = LightIcons.REFRESH,
                 onClick = onRefresh,
@@ -237,23 +292,85 @@ private fun DeviceListContent(
                 .padding(start = 1f.gridUnitsAsDp()),
         ) {
             LightText(
-                text = HaMessages.CALLS_ONLY,
-                variant = LightTextVariant.Detail,
-                modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
+                text = if (state.category == null) HaMessages.SHOW_ALL else domainTitle(state.category),
+                variant = LightTextVariant.Heading,
+                modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
             )
-            if (state.busy) {
-                LightText(
-                    text = HaMessages.WORKING,
-                    variant = LightTextVariant.Detail,
-                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
-                )
-            }
-            if (grouped.isEmpty()) {
-                LightText(
+            when {
+                state.devices.isEmpty() -> LightText(
                     text = HaMessages.EMPTY,
                     variant = LightTextVariant.Copy,
-                    modifier = Modifier.padding(top = 1f.gridUnitsAsDp()),
                 )
+                !anyChosen -> LightText(
+                    text = HaMessages.PICK_DEVICES,
+                    variant = LightTextVariant.Copy,
+                )
+                grouped.isEmpty() && state.category != null -> LightText(
+                    text = HaMessages.filterEmpty(state.category),
+                    variant = LightTextVariant.Copy,
+                )
+                grouped.isEmpty() -> LightText(
+                    text = HaMessages.PICK_DEVICES,
+                    variant = LightTextVariant.Copy,
+                )
+                else -> grouped.forEach { section ->
+                    if (state.category == null) {
+                        LightText(
+                            text = section.title,
+                            variant = LightTextVariant.Subheading,
+                            modifier = Modifier.padding(top = 1f.gridUnitsAsDp(), bottom = 0.5f.gridUnitsAsDp()),
+                        )
+                    }
+                    section.devices.forEach { device ->
+                        DeviceRow(device.name, device.statusLabel) { onActivate(device.entityId) }
+                    }
+                }
+            }
+        }
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.Text(text = "CHOOSE", onClick = onChoose),
+                LightBarButton.Text(text = "SHOW", onClick = onFilter),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ChooseContent(
+    state: HomeUiState,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onToggle: (String) -> Unit,
+) {
+    val grouped = sections(state.devices)
+    Frame {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Choose"),
+            rightButton = LightBarButton.LightIcon(
+                icon = LightIcons.REFRESH,
+                onClick = onRefresh,
+                contentDescription = "Refresh",
+            ),
+        )
+        LightScrollView(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 1f.gridUnitsAsDp()),
+        ) {
+            LightText(
+                text = HaMessages.CHOOSE_HINT,
+                variant = LightTextVariant.Detail,
+                modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+            )
+            if (grouped.isEmpty()) {
+                LightText(text = HaMessages.EMPTY, variant = LightTextVariant.Copy)
             } else {
                 grouped.forEach { section ->
                     LightText(
@@ -262,19 +379,59 @@ private fun DeviceListContent(
                         modifier = Modifier.padding(top = 1f.gridUnitsAsDp(), bottom = 0.5f.gridUnitsAsDp()),
                     )
                     section.devices.forEach { device ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .lightClickable { onActivate(device.entityId) }
-                                .padding(bottom = 1f.gridUnitsAsDp()),
-                        ) {
-                            LightText(text = device.name, variant = LightTextVariant.Copy)
-                            LightText(text = device.statusLabel, variant = LightTextVariant.Detail, lighten = true)
+                        val detail = if (device.entityId in state.chosenIds) {
+                            HaMessages.ON_LIST
+                        } else {
+                            HaMessages.NOT_ON_LIST
                         }
+                        DeviceRow(device.name, detail) { onToggle(device.entityId) }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FilterContent(
+    state: HomeUiState,
+    onBack: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    Frame {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Show"),
+        )
+        LightScrollView(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 1f.gridUnitsAsDp()),
+        ) {
+            filterChoices().forEach { (category, label) ->
+                val current = category == state.category
+                val text = if (current) "$label · now" else label
+                ActionRow(text) { onSelect(category) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(title: String, detail: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .lightClickable(onClick = onClick)
+            .padding(bottom = 1f.gridUnitsAsDp()),
+    ) {
+        LightText(text = title, variant = LightTextVariant.Copy)
+        LightText(text = detail, variant = LightTextVariant.Detail, lighten = true)
     }
 }
 
@@ -288,7 +445,7 @@ private fun DetailContent(
     onHigher: () -> Unit,
     onMode: (String) -> Unit,
 ) {
-    val device = state.devices.find { it.entityId == state.selectedId }
+    val device = state.devices.find { it.entityId == state.selectedId && it.entityId in state.chosenIds }
     if (device == null) {
         ProblemContent(
             message = HaMessages.UNAVAILABLE,
@@ -312,13 +469,6 @@ private fun DetailContent(
                 .fillMaxWidth()
                 .padding(start = 1f.gridUnitsAsDp()),
         ) {
-            if (state.busy) {
-                LightText(
-                    text = HaMessages.WORKING,
-                    variant = LightTextVariant.Detail,
-                    modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
-                )
-            }
             when (device.domain) {
                 "cover" -> CoverDetail(device, onOpen, onClose)
                 "climate" -> ClimateDetail(device, onMode)

@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import kotlinx.coroutines.flow.first
 import java.security.KeyStore
 import java.util.Base64
@@ -20,6 +21,11 @@ internal class SavedConnection(
 ) {
     override fun toString(): String = "SavedConnection"
 }
+
+internal data class DeviceListPrefs(
+    val chosenIds: Set<String> = emptySet(),
+    val category: String? = null,
+)
 
 internal sealed interface HaTokenRead {
     data class Ready(val connection: SavedConnection) : HaTokenRead
@@ -63,12 +69,40 @@ internal class HaTokenStore(
         }
     }
 
+    suspend fun readList(): DeviceListPrefs {
+        return try {
+            val prefs = dataStore.data.first()
+            DeviceListPrefs(
+                chosenIds = sanitizeChosenIds(prefs[CHOSEN] ?: emptySet()),
+                category = sanitizeCategory(prefs[CATEGORY]),
+            )
+        } catch (_: Exception) {
+            DeviceListPrefs()
+        }
+    }
+
+    suspend fun saveList(chosenIds: Set<String>, category: String?): Boolean {
+        return try {
+            val ids = sanitizeChosenIds(chosenIds)
+            val storedCategory = sanitizeCategory(category)
+            dataStore.edit { prefs ->
+                if (ids.isEmpty()) prefs.remove(CHOSEN) else prefs[CHOSEN] = ids
+                if (storedCategory == null) prefs.remove(CATEGORY) else prefs[CATEGORY] = storedCategory
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun clear(): Boolean {
         return try {
             dataStore.edit { prefs ->
                 prefs.remove(URL)
                 prefs.remove(CIPHERTEXT)
                 prefs.remove(IV)
+                prefs.remove(CHOSEN)
+                prefs.remove(CATEGORY)
             }
             true
         } catch (_: Exception) {
@@ -82,6 +116,8 @@ internal class HaTokenStore(
         val URL = stringPreferencesKey("ha_base_url")
         val CIPHERTEXT = stringPreferencesKey("ha_token_ciphertext")
         val IV = stringPreferencesKey("ha_token_iv")
+        val CHOSEN = stringSetPreferencesKey("ha_chosen_entities")
+        val CATEGORY = stringPreferencesKey("ha_list_category")
     }
 }
 

@@ -3,6 +3,7 @@ package com.danielrweber.lighthome
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
@@ -63,6 +64,34 @@ class HaEndpointTest {
         assertIs<TokenResult.Invalid>(normalizeToken("example token value 0001"))
         assertIs<TokenResult.Invalid>(normalizeToken(""))
     }
+
+    @Test
+    fun scannedCodeIsTheRawHomeAssistantToken() {
+        val token = "ab".repeat(64)
+        assertEquals(128, token.length)
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan(token)).token)
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan("  $token\n")).token)
+        assertEquals(
+            HaMessages.SCAN_NOT_TOKEN,
+            assertIs<TokenResult.Invalid>(tokenFromScan("https://home.example.com/profile")).message,
+        )
+        assertIs<TokenResult.Invalid>(tokenFromScan("short"))
+    }
+
+    @Test
+    fun scannedHomeAssistantQrIsTheAccessTokenJwt() {
+        // Fake token with the shape qrcode.toCanvas receives: HS256 JWT,
+        // payload iss/iat/exp. Not a credential.
+        val token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MSwiZXhwIjoyfQ.ZXhhbXBsZS1zaWduYXR1cmUtdmFsdWUtMDAwMXh4eHg"
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan(token)).token)
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan("  $token\n")).token)
+        assertEquals(token, assertIs<TokenResult.Ok>(normalizeToken(token)).token)
+        assertEquals(
+            token,
+            assertIs<TokenResult.Ok>(tokenFromScan("https://home.example.com/profile?token=$token")).token,
+        )
+        assertNull(homeAssistantAccessToken("https://home.example.com/profile"))
+    }
 }
 
 class HaCatalogTest {
@@ -78,6 +107,24 @@ class HaCatalogTest {
         assertEquals("Heat · 21°C", climate.statusLabel)
         assertEquals("Tap to run", devices.first { it.domain == "scene" }.statusLabel)
         assertEquals(listOf("Lights", "Switches", "Scenes", "Scripts", "Covers", "Climate"), sections(devices).map { it.title })
+    }
+
+    @Test
+    fun listKeepsOnlyTheDevicesYouChose() {
+        val devices = haJson.decodeFromString(ListSerializer(HaState.serializer()), SAMPLE_STATES).toDevices()
+        val chosen = setOf("light.kitchen", "switch.porch", "climate.hall", "sensor.temperature")
+        assertEquals(
+            listOf("light.kitchen", "switch.porch", "climate.hall"),
+            visibleDevices(devices, chosen, null).map { it.entityId },
+        )
+        assertEquals(listOf("light.kitchen"), visibleDevices(devices, chosen, "light").map { it.entityId })
+        assertEquals(emptyList(), visibleDevices(devices, chosen, "scene"))
+        assertEquals(emptyList(), visibleDevices(devices, emptySet(), null))
+        assertEquals(setOf("light.kitchen"), sanitizeChosenIds(setOf("light.kitchen", "sensor.temperature", "not an id")))
+        assertEquals("cover", sanitizeCategory("Cover"))
+        assertEquals(null, sanitizeCategory("all"))
+        assertEquals(null, sanitizeCategory("https://home.example.com"))
+        assertEquals(listOf("All", "Lights", "Switches", "Scenes", "Scripts", "Covers", "Climate"), filterChoices().map { it.second })
     }
 
     @Test
@@ -136,6 +183,14 @@ class HaCatalogTest {
 }
 
 class HaMessagesTest {
+    @Test
+    fun listStatusStaysASingleLine() {
+        assertEquals(HaMessages.CONNECTED, listStatusText(busy = false, error = null))
+        assertEquals(HaMessages.WORKING, listStatusText(busy = true, error = null))
+        assertEquals(HaMessages.WORKING, listStatusText(busy = true, error = HaMessages.UNREACHABLE))
+        assertEquals(HaMessages.UNREACHABLE, listStatusText(busy = false, error = HaMessages.UNREACHABLE))
+    }
+
     @Test
     fun failuresTellTheUserWhatToDo() {
         assertEquals(HaMessages.TOKEN_REJECTED, messageFor(HaCallResult.Http(401)))

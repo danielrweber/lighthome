@@ -5,9 +5,17 @@ internal object HaMessages {
     const val TOKEN_STAYS = "The token stays on this phone."
     const val NO_LAN = "Use the https address of your tunnel. LightHome does not search your home network."
     const val CHECKING = "Checking your Home Assistant…"
-    const val WORKING = "Working…"
+    const val CONNECTED = "Connected"
+    const val WORKING = "Working"
     const val EMPTY =
         "Nothing to control yet. In Home Assistant, add a light, switch, scene, script, cover, or thermostat. Then tap Refresh."
+    const val PICK_DEVICES =
+        "Nothing on this list yet. Tap Choose, then tap each light, switch, scene, script, cover, or thermostat you want here."
+    const val CHOOSE_HINT = "Tap a row to add it or take it off this list."
+    const val ON_LIST = "On this list"
+    const val NOT_ON_LIST = "Tap to add"
+    const val LIST_SAVE_FAILED = "This phone could not save your list. Tap that row again."
+    const val SHOW_ALL = "All"
     const val TOKEN_MISSING =
         "Paste a long-lived access token from your Home Assistant profile, under Security."
     const val TOKEN_REJECTED =
@@ -41,8 +49,11 @@ internal object HaMessages {
     const val TOKEN_LABEL = "Token"
     const val ADDRESS_PLACEHOLDER = "https://home.example.com"
     const val TOKEN_PLACEHOLDER = "Long-lived access token"
+    const val SCAN_TOKEN = "Scan QR code"
+    const val SCAN_NOT_TOKEN =
+        "That code is not a Home Assistant token. On the token screen, tap the QR button, then scan that code. You can also paste the token."
     const val TOKEN_SAVED = "Saved on this phone"
-    const val TOKEN_READY = "New token ready"
+    const val TOKEN_READY = "Read. Tap Connect to save it."
     const val FORGET = "Forget this home"
     const val NO_MODES = "This thermostat did not send a list of modes."
     const val URL_EMPTY = "Enter the https address of your tunnel."
@@ -58,6 +69,17 @@ internal object HaMessages {
         "That address could not be read. Use the https hostname from your tunnel, such as https://home.example.com."
 
     fun httpError(status: Int) = "Home Assistant returned an error ($status). Tap Refresh to try again."
+
+    fun filterEmpty(category: String): String {
+        val name = domainTitle(category).lowercase()
+        return "No $name on this list. Tap Show and choose All, or tap Choose to add one."
+    }
+}
+
+internal fun listStatusText(busy: Boolean, error: String?): String = when {
+    busy -> HaMessages.WORKING
+    error.isNullOrBlank() -> HaMessages.CONNECTED
+    else -> error
 }
 
 internal fun messageFor(result: HaCallResult<*>): String = when (result) {
