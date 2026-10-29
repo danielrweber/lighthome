@@ -1,0 +1,9 @@
+[tool]
+id = "com.danielrweber.lighthome"
+label = "LightHome"
+versionCode = 1
+versionName = "1.0.0"
+permissions = ["android.permission.INTERNET"]
+capabilities = []
+serverPackage = "com.lightos"
+orientation = "portrait"
