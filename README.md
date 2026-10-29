@@ -89,12 +89,13 @@ When the status says the tunnel is running, `https://home.example.com` reaches H
 3. Tap **Token** and paste the long-lived access token, or tap **Scan QR code** and scan the code Home Assistant shows for that token.
 4. Tap **Connect**.
 
-LightHome checks `https://home.example.com/api/` with `Authorization: Bearer` and your token. That call goes to your Home Assistant. Then it loads lights, switches, scenes, scripts, covers, and climate.
+LightHome checks `https://home.example.com/api/` with `Authorization: Bearer` and your token. That call goes to your Home Assistant. Then you choose which lights, switches, scenes, scripts, covers, and thermostats stay on the phone.
 
 The address and token are stored on the phone. The token is encrypted with the phone's keystore and is not written to the app log.
 
 ## Using it
 
+- The list starts empty. Tap **Choose**, then tap each device you want. Tap **Show** to see one kind, or **All**.
 - Tap a light or switch to toggle it.
 - Tap a scene or script to run it.
 - Open a cover to open or close it.

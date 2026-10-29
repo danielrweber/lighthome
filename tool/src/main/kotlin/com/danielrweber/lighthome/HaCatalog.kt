@@ -72,11 +72,42 @@ internal data class HaSection(
 internal fun List<HaState>.toDevices(): List<HaDevice> =
     mapNotNull { it.toDevice() }.associateBy { it.entityId }.values.toList()
 
+internal fun domainTitle(domain: String): String = DOMAIN_TITLES[domain] ?: domain
+
 internal fun sections(devices: List<HaDevice>): List<HaSection> =
     DOMAIN_ORDER.mapNotNull { domain ->
         val items = devices.filter { it.domain == domain }.sortedBy { it.name.lowercase() }
-        if (items.isEmpty()) null else HaSection(DOMAIN_TITLES.getValue(domain), items)
+        if (items.isEmpty()) null else HaSection(domainTitle(domain), items)
     }
+
+internal fun sanitizeCategory(raw: String?): String? {
+    val value = raw?.trim()?.lowercase().orEmpty()
+    if (value.isEmpty() || value == "all") return null
+    return value.takeIf { it in DOMAIN_ORDER }
+}
+
+internal fun sanitizeChosenIds(ids: Set<String>): Set<String> =
+    ids.map { it.trim() }.filter { isChosenEntityId(it) }.toSet()
+
+internal fun visibleDevices(
+    devices: List<HaDevice>,
+    chosenIds: Set<String>,
+    category: String?,
+): List<HaDevice> {
+    val chosen = devices.filter { it.entityId in chosenIds }
+    val narrowed = if (category == null) chosen else chosen.filter { it.domain == category }
+    return sections(narrowed).flatMap { it.devices }
+}
+
+internal fun filterChoices(): List<Pair<String?, String>> =
+    listOf(null to "All") + DOMAIN_ORDER.map { domain -> domain to domainTitle(domain) }
+
+internal fun isChosenEntityId(id: String): Boolean {
+    if (id.length !in 3..200 || id.any { it.isWhitespace() }) return false
+    val dot = id.indexOf('.')
+    if (dot <= 0 || dot != id.lastIndexOf('.')) return false
+    return id.substring(0, dot) in DOMAIN_ORDER
+}
 
 internal fun mergeDevices(existing: List<HaDevice>, updates: List<HaDevice>): List<HaDevice> {
     if (updates.isEmpty()) return existing

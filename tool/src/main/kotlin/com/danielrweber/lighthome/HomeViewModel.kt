@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal enum class HomeMode {
@@ -20,6 +22,8 @@ internal enum class HomeMode {
     ScanToken,
     ConfirmForget,
     Devices,
+    Choose,
+    Filter,
     Detail,
     Problem,
 }
@@ -34,6 +38,8 @@ internal data class HomeUiState(
     val mode: HomeMode = HomeMode.Loading,
     val label: String = "LightHome",
     val devices: List<HaDevice> = emptyList(),
+    val chosenIds: Set<String> = emptySet(),
+    val category: String? = null,
     val selectedId: String? = null,
     val message: String? = HaMessages.CHECKING,
     val errorModal: String? = null,
@@ -57,6 +63,7 @@ class HomeViewModel internal constructor(
     private var listKnown = false
     private var lastProblem: String? = null
     private var skipRefreshOnNextShow = true
+    private val listMutex = Mutex()
 
     init {
         _uiState.update { it.copy(busy = true, mode = HomeMode.Loading, message = HaMessages.CHECKING) }
@@ -75,7 +82,11 @@ class HomeViewModel internal constructor(
                     }
                     is HaTokenRead.Ready -> {
                         saved = read.connection
+                        val listPrefs = withContext(Dispatchers.IO) { tokenStore.readList() }
                         rememberConnection(read.connection)
+                        _uiState.update {
+                            it.copy(chosenIds = listPrefs.chosenIds, category = listPrefs.category)
+                        }
                         fetchDevices(read.connection, keepDetail = false)
                     }
                 }
@@ -100,7 +111,7 @@ class HomeViewModel internal constructor(
             return
         }
         val mode = _uiState.value.mode
-        if (mode == HomeMode.Devices || mode == HomeMode.Detail) {
+        if (mode == HomeMode.Devices || mode == HomeMode.Choose || mode == HomeMode.Filter || mode == HomeMode.Detail) {
             refresh()
         }
     }
@@ -116,6 +127,10 @@ class HomeViewModel internal constructor(
         }
         HomeMode.Detail -> {
             closeDetail()
+            true
+        }
+        HomeMode.Choose, HomeMode.Filter -> {
+            showDevices()
             true
         }
         HomeMode.Setup -> {
@@ -260,9 +275,16 @@ class HomeViewModel internal constructor(
                     return@launch
                 }
                 draftToken = null
+                val previousUrl = saved?.endpoint?.baseUrl
                 val connection = SavedConnection(endpoint, normalized)
+                if (previousUrl != null && previousUrl != connection.endpoint.baseUrl) {
+                    _uiState.update { it.copy(chosenIds = emptySet(), category = null) }
+                }
                 saved = connection
                 publishDevices(connection, listed.value.toDevices(), keepDetail = false, selected = null)
+                if (previousUrl != null && previousUrl != connection.endpoint.baseUrl) {
+                    persistList()
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -362,6 +384,7 @@ class HomeViewModel internal constructor(
     }
 
     fun activate(entityId: String) {
+        if (entityId !in _uiState.value.chosenIds) return
         val device = _uiState.value.devices.find { it.entityId == entityId } ?: return
         when (device.domain) {
             "light", "switch" -> {
@@ -386,6 +409,36 @@ class HomeViewModel internal constructor(
 
     fun closeDetail() {
         _uiState.update { it.copy(mode = HomeMode.Devices, selectedId = null, errorModal = null) }
+    }
+
+    fun openChoose() {
+        _uiState.update { it.copy(mode = HomeMode.Choose, errorModal = null) }
+    }
+
+    fun openFilter() {
+        _uiState.update { it.copy(mode = HomeMode.Filter, errorModal = null) }
+    }
+
+    fun showDevices() {
+        _uiState.update { it.copy(mode = HomeMode.Devices, errorModal = null) }
+    }
+
+    fun toggleChosen(entityId: String) {
+        val device = _uiState.value.devices.find { it.entityId == entityId } ?: return
+        if (!isChosenEntityId(device.entityId)) return
+        _uiState.update { state ->
+            val next = state.chosenIds.toMutableSet()
+            if (!next.add(device.entityId)) next.remove(device.entityId)
+            state.copy(chosenIds = next)
+        }
+        persistList()
+    }
+
+    fun setFilter(category: String?) {
+        _uiState.update {
+            it.copy(category = sanitizeCategory(category), mode = HomeMode.Devices, errorModal = null)
+        }
+        persistList()
     }
 
     fun openCover() = cover("open_cover")
@@ -504,6 +557,7 @@ class HomeViewModel internal constructor(
         saved = connection
         val modeNow = _uiState.value.mode
         val editing = isSetupFlow(modeNow)
+        val keepListEditor = modeNow == HomeMode.Choose || modeNow == HomeMode.Filter
         val showDetail = keepDetail && selected != null && devices.any { it.entityId == selected } && modeNow == HomeMode.Detail
         _uiState.update { state ->
             state.copy(
@@ -514,16 +568,30 @@ class HomeViewModel internal constructor(
                 canLeaveSetup = true,
                 message = null,
                 mode = when {
-                    editing -> state.mode
+                    editing || keepListEditor -> state.mode
                     showDetail -> HomeMode.Detail
                     else -> HomeMode.Devices
                 },
                 selectedId = when {
                     showDetail -> selected
-                    editing -> state.selectedId
+                    editing || keepListEditor -> state.selectedId
                     else -> null
                 },
             )
+        }
+    }
+
+    private fun persistList() {
+        viewModelScope.launch {
+            listMutex.withLock {
+                val snapshot = _uiState.value
+                val ok = withContext(Dispatchers.IO) {
+                    tokenStore.saveList(snapshot.chosenIds, snapshot.category)
+                }
+                if (!ok) {
+                    _uiState.update { it.copy(errorModal = HaMessages.LIST_SAVE_FAILED) }
+                }
+            }
         }
     }
 

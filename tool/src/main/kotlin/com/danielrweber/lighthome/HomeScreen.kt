@@ -112,6 +112,19 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeVi
                         onSetup = viewModel::openSetup,
                         onRefresh = viewModel::refresh,
                         onActivate = viewModel::activate,
+                        onChoose = viewModel::openChoose,
+                        onFilter = viewModel::openFilter,
+                    )
+                    HomeMode.Choose -> ChooseContent(
+                        state = state,
+                        onBack = viewModel::showDevices,
+                        onRefresh = viewModel::refresh,
+                        onToggle = viewModel::toggleChosen,
+                    )
+                    HomeMode.Filter -> FilterContent(
+                        state = state,
+                        onBack = viewModel::showDevices,
+                        onSelect = viewModel::setFilter,
                     )
                     HomeMode.Detail -> DetailContent(
                         state = state,
@@ -252,8 +265,12 @@ private fun DeviceListContent(
     onSetup: () -> Unit,
     onRefresh: () -> Unit,
     onActivate: (String) -> Unit,
+    onChoose: () -> Unit,
+    onFilter: () -> Unit,
 ) {
-    val grouped = sections(state.devices)
+    val visible = visibleDevices(state.devices, state.chosenIds, state.category)
+    val grouped = sections(visible)
+    val anyChosen = state.devices.any { it.entityId in state.chosenIds }
     Frame {
         LightTopBar(
             leftButton = LightBarButton.LightIcon(
@@ -275,9 +292,89 @@ private fun DeviceListContent(
                 .padding(start = 1f.gridUnitsAsDp()),
         ) {
             LightText(
-                text = HaMessages.CALLS_ONLY,
+                text = if (state.category == null) HaMessages.SHOW_ALL else domainTitle(state.category),
+                variant = LightTextVariant.Heading,
+                modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+            )
+            if (state.busy) {
+                LightText(
+                    text = HaMessages.WORKING,
+                    variant = LightTextVariant.Detail,
+                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
+                )
+            }
+            when {
+                state.devices.isEmpty() -> LightText(
+                    text = HaMessages.EMPTY,
+                    variant = LightTextVariant.Copy,
+                )
+                !anyChosen -> LightText(
+                    text = HaMessages.PICK_DEVICES,
+                    variant = LightTextVariant.Copy,
+                )
+                grouped.isEmpty() && state.category != null -> LightText(
+                    text = HaMessages.filterEmpty(state.category),
+                    variant = LightTextVariant.Copy,
+                )
+                grouped.isEmpty() -> LightText(
+                    text = HaMessages.PICK_DEVICES,
+                    variant = LightTextVariant.Copy,
+                )
+                else -> grouped.forEach { section ->
+                    if (state.category == null) {
+                        LightText(
+                            text = section.title,
+                            variant = LightTextVariant.Subheading,
+                            modifier = Modifier.padding(top = 1f.gridUnitsAsDp(), bottom = 0.5f.gridUnitsAsDp()),
+                        )
+                    }
+                    section.devices.forEach { device ->
+                        DeviceRow(device.name, device.statusLabel) { onActivate(device.entityId) }
+                    }
+                }
+            }
+        }
+        LightBottomBar(
+            items = listOf(
+                LightBarButton.Text(text = "CHOOSE", onClick = onChoose),
+                LightBarButton.Text(text = "SHOW", onClick = onFilter),
+            ),
+        )
+    }
+}
+
+@Composable
+private fun ChooseContent(
+    state: HomeUiState,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onToggle: (String) -> Unit,
+) {
+    val grouped = sections(state.devices)
+    Frame {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Choose"),
+            rightButton = LightBarButton.LightIcon(
+                icon = LightIcons.REFRESH,
+                onClick = onRefresh,
+                contentDescription = "Refresh",
+            ),
+        )
+        LightScrollView(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 1f.gridUnitsAsDp()),
+        ) {
+            LightText(
+                text = HaMessages.CHOOSE_HINT,
                 variant = LightTextVariant.Detail,
-                modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
+                modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
             )
             if (state.busy) {
                 LightText(
@@ -287,11 +384,7 @@ private fun DeviceListContent(
                 )
             }
             if (grouped.isEmpty()) {
-                LightText(
-                    text = HaMessages.EMPTY,
-                    variant = LightTextVariant.Copy,
-                    modifier = Modifier.padding(top = 1f.gridUnitsAsDp()),
-                )
+                LightText(text = HaMessages.EMPTY, variant = LightTextVariant.Copy)
             } else {
                 grouped.forEach { section ->
                     LightText(
@@ -300,19 +393,59 @@ private fun DeviceListContent(
                         modifier = Modifier.padding(top = 1f.gridUnitsAsDp(), bottom = 0.5f.gridUnitsAsDp()),
                     )
                     section.devices.forEach { device ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .lightClickable { onActivate(device.entityId) }
-                                .padding(bottom = 1f.gridUnitsAsDp()),
-                        ) {
-                            LightText(text = device.name, variant = LightTextVariant.Copy)
-                            LightText(text = device.statusLabel, variant = LightTextVariant.Detail, lighten = true)
+                        val detail = if (device.entityId in state.chosenIds) {
+                            HaMessages.ON_LIST
+                        } else {
+                            HaMessages.NOT_ON_LIST
                         }
+                        DeviceRow(device.name, detail) { onToggle(device.entityId) }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FilterContent(
+    state: HomeUiState,
+    onBack: () -> Unit,
+    onSelect: (String?) -> Unit,
+) {
+    Frame {
+        LightTopBar(
+            leftButton = LightBarButton.LightIcon(
+                icon = LightIcons.BACK,
+                onClick = onBack,
+                contentDescription = "Back",
+            ),
+            center = LightTopBarCenter.Text("Show"),
+        )
+        LightScrollView(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(start = 1f.gridUnitsAsDp()),
+        ) {
+            filterChoices().forEach { (category, label) ->
+                val current = category == state.category
+                val text = if (current) "$label · now" else label
+                ActionRow(text) { onSelect(category) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(title: String, detail: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .lightClickable(onClick = onClick)
+            .padding(bottom = 1f.gridUnitsAsDp()),
+    ) {
+        LightText(text = title, variant = LightTextVariant.Copy)
+        LightText(text = detail, variant = LightTextVariant.Detail, lighten = true)
     }
 }
 
@@ -326,7 +459,7 @@ private fun DetailContent(
     onHigher: () -> Unit,
     onMode: (String) -> Unit,
 ) {
-    val device = state.devices.find { it.entityId == state.selectedId }
+    val device = state.devices.find { it.entityId == state.selectedId && it.entityId in state.chosenIds }
     if (device == null) {
         ProblemContent(
             message = HaMessages.UNAVAILABLE,

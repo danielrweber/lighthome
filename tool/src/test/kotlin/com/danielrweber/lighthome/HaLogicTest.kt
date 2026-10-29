@@ -110,6 +110,24 @@ class HaCatalogTest {
     }
 
     @Test
+    fun listKeepsOnlyTheDevicesYouChose() {
+        val devices = haJson.decodeFromString(ListSerializer(HaState.serializer()), SAMPLE_STATES).toDevices()
+        val chosen = setOf("light.kitchen", "switch.porch", "climate.hall", "sensor.temperature")
+        assertEquals(
+            listOf("light.kitchen", "switch.porch", "climate.hall"),
+            visibleDevices(devices, chosen, null).map { it.entityId },
+        )
+        assertEquals(listOf("light.kitchen"), visibleDevices(devices, chosen, "light").map { it.entityId })
+        assertEquals(emptyList(), visibleDevices(devices, chosen, "scene"))
+        assertEquals(emptyList(), visibleDevices(devices, emptySet(), null))
+        assertEquals(setOf("light.kitchen"), sanitizeChosenIds(setOf("light.kitchen", "sensor.temperature", "not an id")))
+        assertEquals("cover", sanitizeCategory("Cover"))
+        assertEquals(null, sanitizeCategory("all"))
+        assertEquals(null, sanitizeCategory("https://home.example.com"))
+        assertEquals(listOf("All", "Lights", "Switches", "Scenes", "Scripts", "Covers", "Climate"), filterChoices().map { it.second })
+    }
+
+    @Test
     fun mergeReplacesMatchingEntities() {
         val original = haJson.decodeFromString(ListSerializer(HaState.serializer()), SAMPLE_STATES).toDevices()
         val update = HaState(
