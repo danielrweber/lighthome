@@ -3,6 +3,7 @@ package com.danielrweber.lighthome
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
@@ -75,6 +76,21 @@ class HaEndpointTest {
             assertIs<TokenResult.Invalid>(tokenFromScan("https://home.example.com/profile")).message,
         )
         assertIs<TokenResult.Invalid>(tokenFromScan("short"))
+    }
+
+    @Test
+    fun scannedHomeAssistantQrIsTheAccessTokenJwt() {
+        // Fake token with the shape qrcode.toCanvas receives: HS256 JWT,
+        // payload iss/iat/exp. Not a credential.
+        val token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImlhdCI6MSwiZXhwIjoyfQ.ZXhhbXBsZS1zaWduYXR1cmUtdmFsdWUtMDAwMXh4eHg"
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan(token)).token)
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan("  $token\n")).token)
+        assertEquals(token, assertIs<TokenResult.Ok>(normalizeToken(token)).token)
+        assertEquals(
+            token,
+            assertIs<TokenResult.Ok>(tokenFromScan("https://home.example.com/profile?token=$token")).token,
+        )
+        assertNull(homeAssistantAccessToken("https://home.example.com/profile"))
     }
 }
 

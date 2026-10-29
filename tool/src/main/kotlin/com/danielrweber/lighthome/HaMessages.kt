@@ -45,7 +45,7 @@ internal object HaMessages {
     const val SCAN_NOT_TOKEN =
         "That code is not a Home Assistant token. On the token screen, tap the QR button, then scan that code. You can also paste the token."
     const val TOKEN_SAVED = "Saved on this phone"
-    const val TOKEN_READY = "New token ready"
+    const val TOKEN_READY = "Read. Tap Connect to save it."
     const val FORGET = "Forget this home"
     const val NO_MODES = "This thermostat did not send a list of modes."
     const val URL_EMPTY = "Enter the https address of your tunnel."
