@@ -184,6 +184,14 @@ class HaCatalogTest {
 
 class HaMessagesTest {
     @Test
+    fun listStatusStaysASingleLine() {
+        assertEquals(HaMessages.CONNECTED, listStatusText(busy = false, error = null))
+        assertEquals(HaMessages.WORKING, listStatusText(busy = true, error = null))
+        assertEquals(HaMessages.WORKING, listStatusText(busy = true, error = HaMessages.UNREACHABLE))
+        assertEquals(HaMessages.UNREACHABLE, listStatusText(busy = false, error = HaMessages.UNREACHABLE))
+    }
+
+    @Test
     fun failuresTellTheUserWhatToDo() {
         assertEquals(HaMessages.TOKEN_REJECTED, messageFor(HaCallResult.Http(401)))
         assertEquals(HaMessages.TOKEN_REJECTED, messageFor(HaCallResult.Http(403)))

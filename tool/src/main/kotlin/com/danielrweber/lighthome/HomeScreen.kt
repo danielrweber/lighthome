@@ -278,7 +278,7 @@ private fun DeviceListContent(
                 onClick = onSetup,
                 contentDescription = "Setup",
             ),
-            center = LightTopBarCenter.Text(state.label),
+            center = LightTopBarCenter.Text(listStatusText(state.busy, state.listStatus)),
             rightButton = LightBarButton.LightIcon(
                 icon = LightIcons.REFRESH,
                 onClick = onRefresh,
@@ -296,13 +296,6 @@ private fun DeviceListContent(
                 variant = LightTextVariant.Heading,
                 modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
             )
-            if (state.busy) {
-                LightText(
-                    text = HaMessages.WORKING,
-                    variant = LightTextVariant.Detail,
-                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
-                )
-            }
             when {
                 state.devices.isEmpty() -> LightText(
                     text = HaMessages.EMPTY,
@@ -376,13 +369,6 @@ private fun ChooseContent(
                 variant = LightTextVariant.Detail,
                 modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
             )
-            if (state.busy) {
-                LightText(
-                    text = HaMessages.WORKING,
-                    variant = LightTextVariant.Detail,
-                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
-                )
-            }
             if (grouped.isEmpty()) {
                 LightText(text = HaMessages.EMPTY, variant = LightTextVariant.Copy)
             } else {
@@ -483,13 +469,6 @@ private fun DetailContent(
                 .fillMaxWidth()
                 .padding(start = 1f.gridUnitsAsDp()),
         ) {
-            if (state.busy) {
-                LightText(
-                    text = HaMessages.WORKING,
-                    variant = LightTextVariant.Detail,
-                    modifier = Modifier.padding(bottom = 0.5f.gridUnitsAsDp()),
-                )
-            }
             when (device.domain) {
                 "cover" -> CoverDetail(device, onOpen, onClose)
                 "climate" -> ClimateDetail(device, onMode)

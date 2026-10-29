@@ -43,6 +43,7 @@ internal data class HomeUiState(
     val selectedId: String? = null,
     val message: String? = HaMessages.CHECKING,
     val errorModal: String? = null,
+    val listStatus: String? = null,
     val busy: Boolean = false,
     val setupAddress: String = "",
     val tokenStatus: TokenStatus = TokenStatus.Missing,
@@ -389,14 +390,14 @@ class HomeViewModel internal constructor(
         when (device.domain) {
             "light", "switch" -> {
                 if (device.state == "unavailable") {
-                    _uiState.update { it.copy(errorModal = HaMessages.UNAVAILABLE) }
+                    reportFailure(HaMessages.UNAVAILABLE)
                     return
                 }
                 callService(device.domain, "toggle", HaServiceBody(device.entityId), device.entityId)
             }
             "scene", "script" -> {
                 if (device.state == "unavailable") {
-                    _uiState.update { it.copy(errorModal = HaMessages.UNAVAILABLE) }
+                    reportFailure(HaMessages.UNAVAILABLE)
                     return
                 }
                 callService(device.domain, "turn_on", HaServiceBody(device.entityId), device.entityId)
@@ -448,11 +449,11 @@ class HomeViewModel internal constructor(
     fun adjustClimate(direction: Int) {
         val device = selectedDevice() ?: return
         if (device.state == "unavailable") {
-            _uiState.update { it.copy(errorModal = HaMessages.UNAVAILABLE) }
+            reportFailure(HaMessages.UNAVAILABLE)
             return
         }
         val next = nextTarget(device, direction) ?: run {
-            _uiState.update { it.copy(errorModal = HaMessages.NO_TEMPERATURE) }
+            reportFailure(HaMessages.NO_TEMPERATURE)
             return
         }
         callService(
@@ -466,7 +467,7 @@ class HomeViewModel internal constructor(
     fun setHvacMode(mode: String) {
         val device = selectedDevice() ?: return
         if (device.state == "unavailable") {
-            _uiState.update { it.copy(errorModal = HaMessages.UNAVAILABLE) }
+            reportFailure(HaMessages.UNAVAILABLE)
             return
         }
         callService(
@@ -485,10 +486,14 @@ class HomeViewModel internal constructor(
     private fun cover(service: String) {
         val device = selectedDevice() ?: return
         if (device.state == "unavailable") {
-            _uiState.update { it.copy(errorModal = HaMessages.UNAVAILABLE) }
+            reportFailure(HaMessages.UNAVAILABLE)
             return
         }
         callService(device.domain, service, HaServiceBody(device.entityId), device.entityId)
+    }
+
+    private fun reportFailure(message: String) {
+        _uiState.update { it.copy(errorModal = message, listStatus = message) }
     }
 
     private fun callService(domain: String, service: String, body: HaServiceBody, actedId: String) {
@@ -503,6 +508,7 @@ class HomeViewModel internal constructor(
                 when (result) {
                     is HaCallResult.Ok -> {
                         val updates = result.value.toDevices()
+                        var followUpError: String? = null
                         val merged = if (updates.any { it.entityId == actedId }) {
                             mergeDevices(_uiState.value.devices, updates)
                         } else {
@@ -512,7 +518,7 @@ class HomeViewModel internal constructor(
                             if (listed is HaCallResult.Ok) {
                                 listed.value.toDevices()
                             } else {
-                                _uiState.update { it.copy(errorModal = messageFor(listed)) }
+                                followUpError = messageFor(listed)
                                 mergeDevices(_uiState.value.devices, updates)
                             }
                         }
@@ -520,17 +526,19 @@ class HomeViewModel internal constructor(
                             val keepDetail = state.mode == HomeMode.Detail && state.selectedId == actedId
                             state.copy(
                                 devices = merged,
+                                listStatus = followUpError,
+                                errorModal = followUpError,
                                 mode = if (keepDetail) HomeMode.Detail else state.mode,
                                 selectedId = if (keepDetail) actedId else state.selectedId,
                             )
                         }
                     }
-                    else -> _uiState.update { it.copy(errorModal = messageFor(result)) }
+                    else -> reportFailure(messageFor(result))
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                _uiState.update { it.copy(errorModal = HaMessages.UNREADABLE) }
+                reportFailure(HaMessages.UNREADABLE)
             } finally {
                 _uiState.update { it.copy(busy = false) }
             }
@@ -567,6 +575,7 @@ class HomeViewModel internal constructor(
                 tokenStatus = if (draftToken == null) TokenStatus.Saved else TokenStatus.ReplacementReady,
                 canLeaveSetup = true,
                 message = null,
+                listStatus = null,
                 mode = when {
                     editing || keepListEditor -> state.mode
                     showDetail -> HomeMode.Detail
@@ -589,7 +598,7 @@ class HomeViewModel internal constructor(
                     tokenStore.saveList(snapshot.chosenIds, snapshot.category)
                 }
                 if (!ok) {
-                    _uiState.update { it.copy(errorModal = HaMessages.LIST_SAVE_FAILED) }
+                    reportFailure(HaMessages.LIST_SAVE_FAILED)
                 }
             }
         }
@@ -602,7 +611,8 @@ class HomeViewModel internal constructor(
             _uiState.value.devices.isNotEmpty()
         _uiState.update {
             when {
-                isSetupFlow(modeNow) || stayWithList -> it.copy(errorModal = message)
+                isSetupFlow(modeNow) -> it.copy(errorModal = message)
+                stayWithList -> it.copy(errorModal = message, listStatus = message)
                 else -> it.copy(mode = HomeMode.Problem, message = message, errorModal = null)
             }
         }

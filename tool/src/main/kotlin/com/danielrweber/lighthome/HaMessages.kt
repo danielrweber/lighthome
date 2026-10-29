@@ -5,7 +5,8 @@ internal object HaMessages {
     const val TOKEN_STAYS = "The token stays on this phone."
     const val NO_LAN = "Use the https address of your tunnel. LightHome does not search your home network."
     const val CHECKING = "Checking your Home Assistant…"
-    const val WORKING = "Working…"
+    const val CONNECTED = "Connected"
+    const val WORKING = "Working"
     const val EMPTY =
         "Nothing to control yet. In Home Assistant, add a light, switch, scene, script, cover, or thermostat. Then tap Refresh."
     const val PICK_DEVICES =
@@ -73,6 +74,12 @@ internal object HaMessages {
         val name = domainTitle(category).lowercase()
         return "No $name on this list. Tap Show and choose All, or tap Choose to add one."
     }
+}
+
+internal fun listStatusText(busy: Boolean, error: String?): String = when {
+    busy -> HaMessages.WORKING
+    error.isNullOrBlank() -> HaMessages.CONNECTED
+    else -> error
 }
 
 internal fun messageFor(result: HaCallResult<*>): String = when (result) {
