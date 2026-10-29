@@ -41,6 +41,9 @@ internal object HaMessages {
     const val TOKEN_LABEL = "Token"
     const val ADDRESS_PLACEHOLDER = "https://home.example.com"
     const val TOKEN_PLACEHOLDER = "Long-lived access token"
+    const val SCAN_TOKEN = "Scan QR code"
+    const val SCAN_NOT_TOKEN =
+        "That code is not a Home Assistant token. On the token screen, tap the QR button, then scan that code. You can also paste the token."
     const val TOKEN_SAVED = "Saved on this phone"
     const val TOKEN_READY = "New token ready"
     const val FORGET = "Forget this home"

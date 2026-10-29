@@ -17,6 +17,7 @@ internal enum class HomeMode {
     Setup,
     EditAddress,
     EditToken,
+    ScanToken,
     ConfirmForget,
     Devices,
     Detail,
@@ -105,7 +106,7 @@ class HomeViewModel internal constructor(
     }
 
     override fun onBackPressed(): Boolean = when (_uiState.value.mode) {
-        HomeMode.EditAddress, HomeMode.EditToken -> {
+        HomeMode.EditAddress, HomeMode.EditToken, HomeMode.ScanToken -> {
             cancelEditor()
             true
         }
@@ -150,6 +151,10 @@ class HomeViewModel internal constructor(
         }
     }
 
+    fun openTokenScanner() {
+        _uiState.update { it.copy(mode = HomeMode.ScanToken, editorSeed = "", errorModal = null) }
+    }
+
     fun cancelEditor() {
         _uiState.update { it.copy(mode = HomeMode.Setup, editorSeed = "", errorModal = null) }
     }
@@ -172,7 +177,15 @@ class HomeViewModel internal constructor(
     }
 
     fun submitToken(raw: CharSequence) {
-        when (val parsed = normalizeToken(raw.toString())) {
+        acceptToken(normalizeToken(raw.toString()))
+    }
+
+    fun submitScannedToken(raw: CharSequence) {
+        acceptToken(tokenFromScan(raw.toString()))
+    }
+
+    private fun acceptToken(parsed: TokenResult) {
+        when (parsed) {
             is TokenResult.Invalid -> _uiState.update {
                 it.copy(mode = HomeMode.Setup, editorSeed = "", errorModal = parsed.message)
             }
@@ -555,7 +568,7 @@ class HomeViewModel internal constructor(
     }
 
     private fun isSetupFlow(mode: HomeMode): Boolean = when (mode) {
-        HomeMode.Setup, HomeMode.EditAddress, HomeMode.EditToken, HomeMode.ConfirmForget -> true
+        HomeMode.Setup, HomeMode.EditAddress, HomeMode.EditToken, HomeMode.ScanToken, HomeMode.ConfirmForget -> true
         else -> false
     }
 }

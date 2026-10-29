@@ -63,6 +63,19 @@ class HaEndpointTest {
         assertIs<TokenResult.Invalid>(normalizeToken("example token value 0001"))
         assertIs<TokenResult.Invalid>(normalizeToken(""))
     }
+
+    @Test
+    fun scannedCodeIsTheRawHomeAssistantToken() {
+        val token = "ab".repeat(64)
+        assertEquals(128, token.length)
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan(token)).token)
+        assertEquals(token, assertIs<TokenResult.Ok>(tokenFromScan("  $token\n")).token)
+        assertEquals(
+            HaMessages.SCAN_NOT_TOKEN,
+            assertIs<TokenResult.Invalid>(tokenFromScan("https://home.example.com/profile")).message,
+        )
+        assertIs<TokenResult.Invalid>(tokenFromScan("short"))
+    }
 }
 
 class HaCatalogTest {

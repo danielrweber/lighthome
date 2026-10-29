@@ -9,14 +9,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextAlign
 import com.thelightphone.sdk.InitialScreen
+import com.thelightphone.sdk.LightQrCodeScanner
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.SealedLightActivity
 import com.thelightphone.sdk.rememberKeyboardOptions
@@ -66,8 +71,13 @@ class HomeScreen(sealedActivity: SealedLightActivity) : LightScreen<Unit, HomeVi
                         onBack = viewModel::leaveSetup,
                         onEditAddress = viewModel::openAddressEditor,
                         onEditToken = viewModel::openTokenEditor,
+                        onScanToken = viewModel::openTokenScanner,
                         onForget = viewModel::askForget,
                         onConnect = viewModel::connect,
+                    )
+                    HomeMode.ScanToken -> TokenScanner(
+                        onScanned = viewModel::submitScannedToken,
+                        onBack = viewModel::cancelEditor,
                     )
                     HomeMode.EditAddress, HomeMode.EditToken -> {
                         key(state.editorSession) {
@@ -136,6 +146,7 @@ private fun SetupContent(
     onBack: () -> Unit,
     onEditAddress: () -> Unit,
     onEditToken: () -> Unit,
+    onScanToken: () -> Unit,
     onForget: () -> Unit,
     onConnect: () -> Unit,
 ) {
@@ -190,6 +201,13 @@ private fun SetupContent(
                 placeholder = HaMessages.TOKEN_PLACEHOLDER,
                 onClick = onEditToken,
             )
+            LightText(
+                text = HaMessages.SCAN_TOKEN,
+                variant = LightTextVariant.Copy,
+                modifier = Modifier
+                    .padding(top = 1f.gridUnitsAsDp(), bottom = 0.5f.gridUnitsAsDp())
+                    .lightClickable(onClick = onScanToken),
+            )
             if (state.tokenStatus != TokenStatus.Missing || state.setupAddress.isNotBlank()) {
                 LightText(
                     text = HaMessages.FORGET,
@@ -205,6 +223,26 @@ private fun SetupContent(
                 LightBarButton.Text(text = "CONNECT", onClick = onConnect),
             ),
         )
+    }
+}
+
+@Composable
+private fun TokenScanner(
+    onScanned: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var pendingScan by remember { mutableStateOf<String?>(null) }
+    LightQrCodeScanner(
+        title = HaMessages.TOKEN_LABEL,
+        onScanned = { pendingScan = it },
+        onBack = onBack,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LightThemeTokens.colors.background),
+    )
+    LaunchedEffect(pendingScan) {
+        val value = pendingScan ?: return@LaunchedEffect
+        onScanned(value)
     }
 }
 

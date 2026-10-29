@@ -86,7 +86,7 @@ When the status says the tunnel is running, `https://home.example.com` reaches H
 
 1. Open LightHome.
 2. Tap **Address** and enter `https://home.example.com`. Use your hostname. Leave off any path.
-3. Tap **Token** and paste the long-lived access token.
+3. Tap **Token** and paste the long-lived access token, or tap **Scan QR code** and scan the code Home Assistant shows for that token.
 4. Tap **Connect**.
 
 LightHome checks `https://home.example.com/api/` with `Authorization: Bearer` and your token. That call goes to your Home Assistant. Then it loads lights, switches, scenes, scripts, covers, and climate.

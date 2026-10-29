@@ -71,6 +71,12 @@ internal fun parseHaBaseUrl(raw: String): HaUrlResult {
     return HaUrlResult.Ok(HaEndpoint(baseUrl = baseUrl, label = label))
 }
 
+internal fun tokenFromScan(raw: String): TokenResult {
+    val trimmed = raw.trim()
+    if ("://" in trimmed) return TokenResult.Invalid(HaMessages.SCAN_NOT_TOKEN)
+    return normalizeToken(trimmed)
+}
+
 internal fun normalizeToken(raw: String): TokenResult {
     var token = raw.trim()
     if (token.startsWith("Bearer ", ignoreCase = true)) {
